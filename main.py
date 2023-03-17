@@ -1,53 +1,70 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import LabelEncoder
 
-# Load the dataset
 data = pd.read_csv("train.csv")
+
+# Feature Engineering
+data['Title'] = data['Name'].apply(lambda x: x.split(',')[1].split('.')[0].strip())
+title_mapping = {
+    "Mr": "Mr",
+    "Miss": "Miss",
+    "Mrs": "Mrs",
+    "Master": "Master",
+    "Dr": "Officer",
+    "Rev": "Officer",
+    "Col": "Officer",
+    "Major": "Officer",
+    "Mlle": "Miss",
+    "Mme": "Mrs",
+    "Don": "Royalty",
+    "Dona": "Royalty",
+    "Lady": "Royalty",
+    "the Countess": "Royalty",
+    "Jonkheer": "Royalty",
+    "Sir": "Royalty",
+    "Capt": "Officer",
+    "Ms": "Miss"
+}
+data['Title'] = data['Title'].map(title_mapping)
+data['FamilySize'] = data['SibSp'] + data['Parch'] + 1
+data['IsAlone'] = data['FamilySize'].apply(lambda x: 1 if x == 1 else 0)
+data['FarePerPerson'] = data['Fare'] / data['FamilySize']
 
 # Preprocessing
 data['Age'].fillna(data['Age'].median(), inplace=True)
 data['Embarked'].fillna(data['Embarked'].mode()[0], inplace=True)
-data['FamilySize'] = data['SibSp'] + data['Parch'] + 1
-data['IsAlone'] = 1
-data['IsAlone'].loc[data['FamilySize'] > 1] = 0
+data.drop(columns=['Cabin', 'Ticket', 'Name', 'PassengerId'], inplace=True)
 
-data = data.drop(['Cabin', 'Ticket', 'Name', 'PassengerId', 'SibSp', 'Parch'], axis=1)
-data = pd.get_dummies(data, columns=['Sex', 'Embarked'])
+le = LabelEncoder()
+data['Sex'] = le.fit_transform(data['Sex'])
+data['Embarked'] = le.fit_transform(data['Embarked'])
+data['Title'] = le.fit_transform(data['Title'])
 
-# Define features and target
-X = data.drop("Survived", axis=1)
-y = data["Survived"]
+X = data.drop(columns=['Survived'])
+y = data['Survived']
 
-# Split the dataset
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Standardize the data
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
-
-# Hyperparameter tuning with GridSearchCV
+# Grid Search
 param_grid = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [None, 10, 20, 30],
+    'n_estimators': [100, 300, 500],
+    'max_depth': [None, 10, 30, 50],
     'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
+    'min_samples_leaf': [1, 2, 4]
 }
 
-grid_search = GridSearchCV(estimator=RandomForestClassifier(random_state=42), param_grid=param_grid, cv=5)
+rfc = RandomForestClassifier(random_state=42)
+grid_search = GridSearchCV(estimator=rfc, param_grid=param_grid, cv=5, scoring='accuracy')
 grid_search.fit(X_train, y_train)
+
 best_params = grid_search.best_params_
-print("Best parameters:", best_params)
+print(f"Best parameters: {best_params}")
 
-# Train the model with the best parameters
-model = RandomForestClassifier(**best_params, random_state=42)
-model.fit(X_train, y_train)
-
-# Make predictions and calculate the accuracy
-y_pred = model.predict(X_test)
+best_rfc = RandomForestClassifier(**best_params, random_state=42)
+best_rfc.fit(X_train, y_train)
+y_pred = best_rfc.predict(X_test)
 accuracy = accuracy_score(y_test, y_pred)
-print("Accuracy:", accuracy)
+print(f"Accuracy: {accuracy}")
